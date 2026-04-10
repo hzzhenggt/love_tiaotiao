@@ -1,0 +1,9 @@
+# LÖVE 引擎二进制（不纳入版本控制）
+love-11.5-win64/
+
+# 日志
+log/
+
+# 系统文件
+.DS_Store
+Thumbs.db
