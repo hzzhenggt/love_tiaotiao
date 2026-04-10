@@ -100,8 +100,24 @@ function love.mousepressed(x, y, button)
     edevice.mousepressed(x, y, button)
 end
 
+function love.mousereleased(x, y, button)
+    edevice.mousereleased(x, y, button)
+end
+
+function love.mousemoved(x, y, dx, dy)
+    edevice.mousemoved(x, y, dx, dy)
+end
+
 function love.touchpressed(id, x, y)
     edevice.touchpressed(id, x, y)
+end
+
+function love.touchmoved(id, x, y)
+    edevice.touchmoved(id, x, y)
+end
+
+function love.touchreleased(id, x, y)
+    edevice.touchreleased(id, x, y)
 end
 
 -- ========================================================================

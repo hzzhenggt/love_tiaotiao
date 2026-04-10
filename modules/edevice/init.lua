@@ -1,18 +1,23 @@
 -- ==========================================================================
 -- edevice - LÖVE2D 设备信息浮动面板模块
 -- 独立模块，可在任意 LÖVE2D 项目中 require 使用
+-- 支持：浮动按钮、点击展开/收起、按住拖动
 -- 用法：
 --   local edevice = require("edevice")
 --   function love.load() edevice.load() end
 --   function love.draw() edevice.draw() end
 --   function love.mousepressed(x, y, btn) edevice.mousepressed(x, y, btn) end
+--   function love.mousereleased(x, y, btn) edevice.mousereleased(x, y, btn) end
+--   function love.mousemoved(x, y, dx, dy) edevice.mousemoved(x, y, dx, dy) end
 --   function love.touchpressed(id, x, y) edevice.touchpressed(id, x, y) end
+--   function love.touchreleased(id, x, y) edevice.touchreleased(id, x, y) end
+--   function love.touchmoved(id, x, y) edevice.touchmoved(id, x, y) end
 -- ==========================================================================
 
 local edevice = {
     -- 状态
-    expanded = false,          -- 面板是否展开
-    font = nil,                -- 字体对象
+    expanded = false,
+    font = nil,
 
     -- 外观配置
     fontSize = 12,
@@ -24,22 +29,34 @@ local edevice = {
     -- 浮动按钮配置
     btnRadius = 22,
     btnColor = {0.2, 0.6, 1.0, 0.7},
+    btnDragColor = {0.3, 0.7, 1.0, 0.9},  -- 拖动时高亮
     btnIconColor = {1, 1, 1, 0.95},
     btnMargin = 16,
 
-    -- 内部缓存（运行时计算）
-    _btnX = 0,
-    _btnY = 0,
-    _panelRect = nil,  -- {x, y, w, h}
+    -- 按钮位置（可拖动，nil 表示使用默认右下角）
+    _btnX = nil,
+    _btnY = nil,
+
+    -- 拖动状态
+    _dragging = false,
+    _dragOffsetX = 0,
+    _dragOffsetY = 0,
+    _dragMoved = false,       -- 本次按下是否产生了移动
+    _dragThreshold = 4,       -- 移动超过此像素才算拖动（区分点击）
+    _pressX = 0,
+    _pressY = 0,
+
+    -- 触摸拖动
+    _touchId = nil,
+
+    -- 面板缓存
+    _panelRect = nil,
 }
 
 -- ========================================================================
 -- 信息采集
 -- ========================================================================
 
---- 格式化内存值
---- @param memKB number
---- @return string
 function edevice.formatMemory(memKB)
     local str = string.format("%.2f KB", memKB)
     if memKB > 1024 then
@@ -48,24 +65,17 @@ function edevice.formatMemory(memKB)
     return str
 end
 
---- 格式化帧时间
---- @param deltaSec number
---- @return string
 function edevice.formatFrameTime(deltaSec)
     return string.format("%.2f ms", deltaSec * 1000)
 end
 
---- 采集设备/系统信息
---- @return table {label, value} 数组
 function edevice.collectInfo()
     local info = {}
-
     info[#info + 1] = { label = "Lua Version",  value = _VERSION }
 
     local hasJit = type(jit) == "table"
     info[#info + 1] = { label = "LuaJIT", value = hasJit and (jit.version or "Unknown") or "N/A" }
     info[#info + 1] = { label = "JIT Status", value = hasJit and (jit.status() and "Enabled" or "Disabled") or "N/A" }
-
     info[#info + 1] = { label = "Memory", value = edevice.formatMemory(collectgarbage("count")) }
     info[#info + 1] = { label = "CPU Cores", value = tostring(love.system.getProcessorCount()) }
     info[#info + 1] = { label = "FPS", value = tostring(love.timer.getFPS()) }
@@ -93,39 +103,63 @@ function edevice.load(options)
     if options.fontSize then edevice.fontSize = options.fontSize end
     if options.expanded ~= nil then edevice.expanded = options.expanded end
     edevice.font = love.graphics.newFont(edevice.fontSize)
+    -- 默认位置：右下角
+    edevice._btnX = nil
+    edevice._btnY = nil
+end
+
+-- ========================================================================
+-- 位置计算
+-- ========================================================================
+
+--- 获取按钮中心坐标（默认右下角，拖动后为自定义位置）
+local function getBtnCenter()
+    if edevice._btnX and edevice._btnY then
+        return edevice._btnX, edevice._btnY
+    end
+    local w, h = love.graphics.getDimensions()
+    return w - edevice.btnMargin - edevice.btnRadius,
+           h - edevice.btnMargin - edevice.btnRadius
+end
+
+--- 将按钮位置限制在屏幕内
+local function clampBtn(bx, by)
+    local w, h = love.graphics.getDimensions()
+    local r = edevice.btnRadius
+    bx = math.max(r, math.min(w - r, bx))
+    by = math.max(r, math.min(h - r, by))
+    return bx, by
+end
+
+local function isInsideCircle(px, py, cx, cy, r)
+    return (px - cx) ^ 2 + (py - cy) ^ 2 <= r ^ 2
 end
 
 -- ========================================================================
 -- 绘制
 -- ========================================================================
 
---- 计算浮动按钮位置（右下角）
-local function calcBtnPos()
-    local w, h = love.graphics.getDimensions()
-    edevice._btnX = w - edevice.btnMargin - edevice.btnRadius
-    edevice._btnY = h - edevice.btnMargin - edevice.btnRadius
-end
-
---- 绘制浮动按钮
 local function drawButton()
-    calcBtnPos()
-    local bx, by, r = edevice._btnX, edevice._btnY, edevice.btnRadius
+    local bx, by = getBtnCenter()
+    local r = edevice.btnRadius
 
-    -- 圆形背景
-    love.graphics.setColor(edevice.btnColor)
+    -- 拖动时高亮
+    if edevice._dragging then
+        love.graphics.setColor(edevice.btnDragColor)
+    else
+        love.graphics.setColor(edevice.btnColor)
+    end
     love.graphics.circle("fill", bx, by, r)
 
-    -- 图标：展开时画 "×"，收起时画 "i"
+    -- 图标
     love.graphics.setColor(edevice.btnIconColor)
     if edevice.expanded then
-        -- × 号
         local s = r * 0.4
         love.graphics.setLineWidth(2)
         love.graphics.line(bx - s, by - s, bx + s, by + s)
         love.graphics.line(bx + s, by - s, bx - s, by + s)
         love.graphics.setLineWidth(1)
     else
-        -- "i" 字母
         love.graphics.setFont(edevice.font)
         local text = "i"
         local tw = edevice.font:getWidth(text)
@@ -134,7 +168,6 @@ local function drawButton()
     end
 end
 
---- 绘制信息面板（从按钮上方展开）
 local function drawPanel()
     if not edevice.expanded then return end
 
@@ -142,7 +175,6 @@ local function drawPanel()
     local lines = edevice.collectInfo()
     local lineHeight = edevice.font:getHeight()
 
-    -- 计算面板尺寸
     local maxTextWidth = 0
     for _, line in ipairs(lines) do
         local w = edevice.font:getWidth(line.label .. ": " .. line.value)
@@ -152,22 +184,27 @@ local function drawPanel()
     local pw = maxTextWidth + 2 * edevice.padding
     local ph = #lines * lineHeight + 2 * edevice.padding
 
-    -- 定位：按钮正上方，右对齐
+    -- 面板定位：按钮正上方
+    local bx, by = getBtnCenter()
+    local r = edevice.btnRadius
     local winW, winH = love.graphics.getDimensions()
-    local px = winW - pw - edevice.margin
-    local py = winH - edevice.btnMargin - edevice.btnRadius * 2 - edevice.margin - ph
 
-    -- 确保不超出屏幕
+    local px = bx + r - pw  -- 右对齐到按钮右边缘
+    local py = by - r - edevice.margin - ph  -- 按钮上方
+
+    -- 如果上方放不下，放到下方
+    if py < edevice.margin then
+        py = by + r + edevice.margin
+    end
+    -- 左右边界
     if px < edevice.margin then px = edevice.margin end
-    if py < edevice.margin then py = edevice.margin end
+    if px + pw > winW - edevice.margin then px = winW - edevice.margin - pw end
 
     edevice._panelRect = { x = px, y = py, w = pw, h = ph }
 
-    -- 半透明背景
     love.graphics.setColor(edevice.panelBg)
     love.graphics.rectangle("fill", px, py, pw, ph, 6, 6)
 
-    -- 文字
     love.graphics.setColor(edevice.textColor)
     for i, line in ipairs(lines) do
         love.graphics.print(
@@ -188,30 +225,91 @@ function edevice.draw()
 end
 
 -- ========================================================================
--- 交互
+-- 鼠标交互：按住拖动 + 短按切换
 -- ========================================================================
-
-local function isInsideCircle(px, py, cx, cy, r)
-    return (px - cx) ^ 2 + (py - cy) ^ 2 <= r ^ 2
-end
 
 function edevice.mousepressed(x, y, button)
     if button ~= 1 then return false end
-    calcBtnPos()
-    if isInsideCircle(x, y, edevice._btnX, edevice._btnY, edevice.btnRadius) then
-        edevice.expanded = not edevice.expanded
-        return true  -- 事件已消费
+    local bx, by = getBtnCenter()
+    if isInsideCircle(x, y, bx, by, edevice.btnRadius) then
+        edevice._dragging = true
+        edevice._dragOffsetX = bx - x
+        edevice._dragOffsetY = by - y
+        edevice._dragMoved = false
+        edevice._pressX = x
+        edevice._pressY = y
+        return true
     end
     return false
 end
 
-function edevice.touchpressed(id, x, y)
-    calcBtnPos()
-    if isInsideCircle(x, y, edevice._btnX, edevice._btnY, edevice.btnRadius) then
+function edevice.mousemoved(x, y, dx, dy)
+    if not edevice._dragging then return false end
+    -- 检查是否超过拖动阈值
+    local dist = math.sqrt((x - edevice._pressX)^2 + (y - edevice._pressY)^2)
+    if dist >= edevice._dragThreshold then
+        edevice._dragMoved = true
+    end
+    if edevice._dragMoved then
+        local nx, ny = clampBtn(x + edevice._dragOffsetX, y + edevice._dragOffsetY)
+        edevice._btnX = nx
+        edevice._btnY = ny
+    end
+    return true
+end
+
+function edevice.mousereleased(x, y, button)
+    if button ~= 1 or not edevice._dragging then return false end
+    edevice._dragging = false
+    -- 没有移动 → 视为点击，切换展开/收起
+    if not edevice._dragMoved then
         edevice.expanded = not edevice.expanded
+    end
+    return true
+end
+
+-- ========================================================================
+-- 触摸交互：按住拖动 + 短按切换
+-- ========================================================================
+
+function edevice.touchpressed(id, x, y)
+    if edevice._touchId then return false end
+    local bx, by = getBtnCenter()
+    if isInsideCircle(x, y, bx, by, edevice.btnRadius) then
+        edevice._touchId = id
+        edevice._dragging = true
+        edevice._dragOffsetX = bx - x
+        edevice._dragOffsetY = by - y
+        edevice._dragMoved = false
+        edevice._pressX = x
+        edevice._pressY = y
         return true
     end
     return false
+end
+
+function edevice.touchmoved(id, x, y)
+    if id ~= edevice._touchId or not edevice._dragging then return false end
+    local dist = math.sqrt((x - edevice._pressX)^2 + (y - edevice._pressY)^2)
+    if dist >= edevice._dragThreshold then
+        edevice._dragMoved = true
+    end
+    if edevice._dragMoved then
+        local nx, ny = clampBtn(x + edevice._dragOffsetX, y + edevice._dragOffsetY)
+        edevice._btnX = nx
+        edevice._btnY = ny
+    end
+    return true
+end
+
+function edevice.touchreleased(id, x, y)
+    if id ~= edevice._touchId then return false end
+    edevice._dragging = false
+    edevice._touchId = nil
+    if not edevice._dragMoved then
+        edevice.expanded = not edevice.expanded
+    end
+    return true
 end
 
 return edevice
