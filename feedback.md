@@ -3,6 +3,7 @@
 | 状态 | 类型 | 编号 | 描述 | 优先级 | 日期 |
 |------|------|------|------|--------|------|
 | ✅ | feature | F001 | 设备信息面板抽取为独立 edevice 模块，浮动按钮交互 | 高 | 2026-04-10 |
+| ✅ | feature | F002 | 通用模块化测试启动器 start_test.bat + conf.lua 路径注入 | 高 | 2026-04-10 |
 
 ## 详细记录
 
@@ -13,3 +14,9 @@
 - 面板半透明深色背景，圆角矩形，从按钮上方弹出
 - 支持鼠标和触摸事件
 - `test/main.lua` 已重构为使用 edevice 模块
+
+### F002 - 通用模块化测试启动器
+- `start_test.bat` 通用化，通过环境变量 `LOVE_MODULES_PATH` 传递 modules 路径
+- `test/conf.lua` 在 LÖVE 启动前自动将 modules/ 注入 `package.path`
+- 支持 `start_test.bat [目录]` 参数，默认测试 test 目录
+- 将来新增模块只需放入 modules/ 即可被任意测试项目 require

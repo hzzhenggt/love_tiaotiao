@@ -26,6 +26,7 @@ love2d 游戏引擎快速开发模板
 - 文件类：ls、cat、rm、mv、cp、mkdir
 - 运行类：python、node、lua、bash
 - 工具类：grep、sed、awk、curl、wget
+- scm类：git、svn
 - 项目脚本：当前目录下任意脚本
 
 ### 3. 工具内置命令和指令
