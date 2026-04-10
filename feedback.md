@@ -7,6 +7,7 @@
 | ✅ | feature | F003 | edevice 浮动按钮支持按住拖动 | 中 | 2026-04-10 |
 | ✅ | feature | F004 | edevice 面板增加 Copy 按钮，一键复制设备信息到剪贴板 | 中 | 2026-04-10 |
 | ✅ | feature | F005 | build_apk.bat 通用 Android APK 打包器 | 高 | 2026-04-10 |
+| ✅ | docs | D001 | CLAUDE.MD 追加设计文档规范，补充 edevice 设计文档 | 中 | 2026-04-10 |
 
 ## 详细记录
 
