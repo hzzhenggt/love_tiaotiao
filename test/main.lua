@@ -88,6 +88,10 @@ function love.load()
     overlay.load()
 end
 
+function love.update(dt)
+    edevice.update(dt)
+end
+
 function love.draw()
     overlay.draw()
 end

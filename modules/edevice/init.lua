@@ -51,6 +51,15 @@ local edevice = {
 
     -- 面板缓存
     _panelRect = nil,
+
+    -- Copy 按钮
+    _copyBtnRect = nil,       -- {x, y, w, h}
+    _copyFlashTimer = 0,      -- 复制成功闪烁计时
+    copyBtnColor = {0.3, 0.7, 0.4, 0.7},
+    copyBtnFlashColor = {0.2, 1.0, 0.4, 0.9},
+    copyBtnTextColor = {1, 1, 1, 0.9},
+    copyBtnHeight = 18,
+    copyBtnPadding = 4,
 }
 
 -- ========================================================================
@@ -169,7 +178,11 @@ local function drawButton()
 end
 
 local function drawPanel()
-    if not edevice.expanded then return end
+    if not edevice.expanded then
+        edevice._panelRect = nil
+        edevice._copyBtnRect = nil
+        return
+    end
 
     love.graphics.setFont(edevice.font)
     local lines = edevice.collectInfo()
@@ -182,29 +195,31 @@ local function drawPanel()
     end
 
     local pw = maxTextWidth + 2 * edevice.padding
-    local ph = #lines * lineHeight + 2 * edevice.padding
+    -- 面板高度 = 信息行 + 间距 + copy按钮行
+    local copyRowH = edevice.copyBtnHeight + edevice.copyBtnPadding
+    local ph = #lines * lineHeight + 2 * edevice.padding + copyRowH
 
     -- 面板定位：按钮正上方
     local bx, by = getBtnCenter()
     local r = edevice.btnRadius
     local winW, winH = love.graphics.getDimensions()
 
-    local px = bx + r - pw  -- 右对齐到按钮右边缘
-    local py = by - r - edevice.margin - ph  -- 按钮上方
+    local px = bx + r - pw
+    local py = by - r - edevice.margin - ph
 
-    -- 如果上方放不下，放到下方
     if py < edevice.margin then
         py = by + r + edevice.margin
     end
-    -- 左右边界
     if px < edevice.margin then px = edevice.margin end
     if px + pw > winW - edevice.margin then px = winW - edevice.margin - pw end
 
     edevice._panelRect = { x = px, y = py, w = pw, h = ph }
 
+    -- 半透明背景
     love.graphics.setColor(edevice.panelBg)
     love.graphics.rectangle("fill", px, py, pw, ph, 6, 6)
 
+    -- 信息文字
     love.graphics.setColor(edevice.textColor)
     for i, line in ipairs(lines) do
         love.graphics.print(
@@ -213,6 +228,29 @@ local function drawPanel()
             py + edevice.padding + (i - 1) * lineHeight
         )
     end
+
+    -- Copy 按钮：面板右下角
+    local copyText = "Copy"
+    local ctw = edevice.font:getWidth(copyText)
+    local cbw = ctw + edevice.copyBtnPadding * 2
+    local cbh = edevice.copyBtnHeight
+    local cbx = px + pw - edevice.padding - cbw
+    local cby = py + ph - edevice.padding - cbh + 2
+
+    edevice._copyBtnRect = { x = cbx, y = cby, w = cbw, h = cbh }
+
+    -- 复制成功闪烁
+    if edevice._copyFlashTimer > 0 then
+        love.graphics.setColor(edevice.copyBtnFlashColor)
+        copyText = "OK!"
+    else
+        love.graphics.setColor(edevice.copyBtnColor)
+    end
+    love.graphics.rectangle("fill", cbx, cby, cbw, cbh, 3, 3)
+
+    love.graphics.setColor(edevice.copyBtnTextColor)
+    local cth = edevice.font:getHeight()
+    love.graphics.print(copyText, cbx + edevice.copyBtnPadding, cby + (cbh - cth) / 2)
 end
 
 function edevice.draw()
@@ -224,12 +262,41 @@ function edevice.draw()
     if prevFont then love.graphics.setFont(prevFont) end
 end
 
+--- 更新计时器，在 love.update 中调用
+function edevice.update(dt)
+    if edevice._copyFlashTimer > 0 then
+        edevice._copyFlashTimer = edevice._copyFlashTimer - dt
+    end
+end
+
+--- 将设备信息复制到剪贴板
+local function copyInfoToClipboard()
+    local lines = edevice.collectInfo()
+    local parts = {}
+    for _, line in ipairs(lines) do
+        parts[#parts + 1] = line.label .. ": " .. line.value
+    end
+    local text = table.concat(parts, "\n")
+    love.system.setClipboardText(text)
+    edevice._copyFlashTimer = 0.6
+end
+
+local function isInsideRect(px, py, rect)
+    return rect and px >= rect.x and px <= rect.x + rect.w
+                 and py >= rect.y and py <= rect.y + rect.h
+end
+
 -- ========================================================================
 -- 鼠标交互：按住拖动 + 短按切换
 -- ========================================================================
 
 function edevice.mousepressed(x, y, button)
     if button ~= 1 then return false end
+    -- 优先检测 copy 按钮
+    if edevice.expanded and isInsideRect(x, y, edevice._copyBtnRect) then
+        copyInfoToClipboard()
+        return true
+    end
     local bx, by = getBtnCenter()
     if isInsideCircle(x, y, bx, by, edevice.btnRadius) then
         edevice._dragging = true
@@ -274,6 +341,11 @@ end
 
 function edevice.touchpressed(id, x, y)
     if edevice._touchId then return false end
+    -- 优先检测 copy 按钮
+    if edevice.expanded and isInsideRect(x, y, edevice._copyBtnRect) then
+        copyInfoToClipboard()
+        return true
+    end
     local bx, by = getBtnCenter()
     if isInsideCircle(x, y, bx, by, edevice.btnRadius) then
         edevice._touchId = id
