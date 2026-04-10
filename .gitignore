@@ -1,6 +1,12 @@
 # LÖVE 引擎二进制（不纳入版本控制）
 love-11.5-win64/
 
+# Android 基础 APK
+asserts/
+
+# 构建产物
+build/
+
 # 日志
 log/
 

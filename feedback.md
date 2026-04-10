@@ -6,6 +6,7 @@
 | ✅ | feature | F002 | 通用模块化测试启动器 start_test.bat + conf.lua 路径注入 | 高 | 2026-04-10 |
 | ✅ | feature | F003 | edevice 浮动按钮支持按住拖动 | 中 | 2026-04-10 |
 | ✅ | feature | F004 | edevice 面板增加 Copy 按钮，一键复制设备信息到剪贴板 | 中 | 2026-04-10 |
+| ✅ | feature | F005 | build_apk.bat 通用 Android APK 打包器 | 高 | 2026-04-10 |
 
 ## 详细记录
 
@@ -35,3 +36,10 @@
 - 点击后通过 `love.system.setClipboardText` 将所有设备信息复制到剪贴板
 - 复制成功后按钮短暂闪绿并显示 "OK!"（0.6 秒）
 - 需在 love.update 中调用 `edevice.update(dt)`
+
+### F005 - build_apk.bat Android 打包器
+- `build_apk.bat [项目目录]` 通用打包，默认 test
+- 流程：复制项目 + modules → 修补 conf.lua 注入 Android 模块路径 → 打包 game.love (zip) → 追加到 love-android.apk 生成最终 APK
+- 构建产物输出到 `build/` 目录
+- conf.lua 自动修补：Android 上无环境变量时使用相对路径 `modules/` 前缀
+- 仅依赖 Windows 自带的 PowerShell，无需额外工具
